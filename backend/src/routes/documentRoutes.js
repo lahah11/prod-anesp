@@ -26,7 +26,8 @@ const workflowPermissions = [
   'mission_validate_technical',
   'mission_assign_logistics',
   'mission_validate_finance',
-  'mission_validate_final'
+  'mission_validate_final',
+  'mission_close'
 ];
 
 router.post(

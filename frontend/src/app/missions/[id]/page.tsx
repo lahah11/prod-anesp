@@ -10,7 +10,9 @@ import {
   TruckIcon,
   CurrencyDollarIcon,
   ShieldCheckIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  ClipboardDocumentCheckIcon,
+  DocumentArrowUpIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -75,16 +77,20 @@ type MissionStatus =
   | 'pending_finance'
   | 'pending_dg'
   | 'approved'
+  | 'pending_archive_validation'
+  | 'archived'
   | 'rejected';
 
-type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg';
+type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg' | 'closure';
 
 const STATUS_ORDER: MissionStatus[] = [
   'pending_technical_validation',
   'pending_logistics',
   'pending_finance',
   'pending_dg',
-  'approved'
+  'approved',
+  'pending_archive_validation',
+  'archived'
 ];
 
 const PERMISSION_BY_STATUS: Record<MissionStatus, string | null> = {
@@ -93,19 +99,24 @@ const PERMISSION_BY_STATUS: Record<MissionStatus, string | null> = {
   pending_finance: 'mission_validate_finance',
   pending_dg: 'mission_validate_final',
   approved: null,
+  pending_archive_validation: 'mission_close',
+  archived: null,
   rejected: null
 };
 
 function getCurrentStep(status: MissionStatus): number {
   const index = STATUS_ORDER.indexOf(status);
-  return index === -1 ? 0 : index + 1;
+  if (index === -1) return 0;
+  return Math.min(index + 1, STEP_DEFINITIONS.length);
 }
 
 const STEP_DEFINITIONS = [
   { id: 1, name: 'Validation technique', role: 'technique', icon: ShieldCheckIcon },
   { id: 2, name: 'Attribution moyens', role: 'moyens_generaux', icon: TruckIcon },
   { id: 3, name: 'Validation financière', role: 'daf', icon: CurrencyDollarIcon },
-  { id: 4, name: 'Validation finale DG', role: 'dg', icon: CheckCircleIcon }
+  { id: 4, name: 'Validation finale DG', role: 'dg', icon: CheckCircleIcon },
+  { id: 5, name: 'Soumission documents (initiateur)', role: 'ingenieur', icon: DocumentArrowUpIcon },
+  { id: 6, name: 'Vérification documents (MG)', role: 'moyens_generaux', icon: ClipboardDocumentCheckIcon }
 ];
 
 function MissionDetailContent({ params }: { params: { id: string } }) {
@@ -141,7 +152,7 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
 
   const canAct = useMemo(() => {
     if (!user || !mission) return false;
-    if (mission.status === 'approved' || mission.status === 'rejected') return false;
+    if (mission.status === 'approved' || mission.status === 'rejected' || mission.status === 'archived') return false;
     if (user.role === 'super_admin') return true;
     const requiredPermission = PERMISSION_BY_STATUS[mission.status];
     if (!requiredPermission) return false;
@@ -159,6 +170,7 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
     if (status === 'pending_technical_validation') step = 'technical';
     else if (status === 'pending_logistics') step = 'logistics';
     else if (status === 'pending_finance') step = 'finance';
+    else if (status === 'pending_archive_validation') step = 'closure';
     else step = 'dg';
 
     setSubmitting(true);
@@ -212,11 +224,12 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
     );
   }
 
+  const allStepsCompleted = mission?.status === 'archived';
   const stepCards = STEP_DEFINITIONS.map((step, index) => ({
     ...step,
-    completed: currentStep > index + 1,
-    current: currentStep === index + 1,
-    statusReached: currentStep >= index + 1
+    completed: allStepsCompleted || currentStep > index + 1,
+    current: allStepsCompleted ? false : currentStep === index + 1,
+    statusReached: allStepsCompleted || currentStep >= index + 1
   }));
 
   const hasLogisticsPermission = user?.role === 'super_admin' || user?.permissions?.includes('mission_assign_logistics');

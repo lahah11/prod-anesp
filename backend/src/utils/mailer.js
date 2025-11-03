@@ -66,7 +66,20 @@ async function sendEmail({ to, subject, html, attachments }) {
     mailOptions.attachments = attachments;
   }
   
-  return mailer.sendMail(mailOptions);
+  try {
+    return await mailer.sendMail(mailOptions);
+  } catch (error) {
+    const responseCode = error && error.responseCode;
+    if (responseCode === 535) {
+      console.error(
+        '[MAILER] SMTP authentication failed (535). Vérifiez le mot de passe ou créez un mot de passe d’application Outlook pour',
+        env.SMTP_USER
+      );
+    } else {
+      console.error('[MAILER] Failed to send email:', error.message || error);
+    }
+    throw error;
+  }
 }
 
 module.exports = { sendEmail };

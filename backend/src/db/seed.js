@@ -63,7 +63,7 @@ const ROLE_PERMISSION_MATRIX = {
   super_admin: PERMISSIONS,
   dg: ['mission_validate_final', 'mission_close'],
   daf: ['mission_validate_finance'],
-  moyens_generaux: ['mission_assign_logistics'],
+  moyens_generaux: ['mission_assign_logistics', 'mission_close'],
   technique: ['mission_validate_technical'],
   rh: ['user_admin_rh'],
   ingenieur: ['mission_create']

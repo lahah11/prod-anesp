@@ -19,7 +19,15 @@ const STATUS_LABELS: Record<string, { fr: string; ar: string }> = {
   pending_finance: { fr: 'Affectation logistique', ar: 'تعيين اللوجستيك' },
   pending_dg: { fr: 'Validation financière', ar: 'اعتماد مالي' },
   approved: { fr: 'Validation DG', ar: 'اعتماد المدير العام' },
+  pending_archive_validation: { fr: 'Contrôle des justificatifs', ar: 'انتظار تدقيق الوسائل العامة' },
+  archived: { fr: 'Mission archivée', ar: 'أرشفة المهمة' },
   rejected: { fr: 'Rejet', ar: 'رفض' }
+};
+
+const ACTION_LABELS: Record<string, { fr: string; ar: string }> = {
+  documents_submitted: { fr: 'Documents justificatifs soumis', ar: 'تم إرسال الوثائق الداعمة' },
+  documents_rejected: { fr: 'Documents justificatifs refusés', ar: 'تم رفض الوثائق الداعمة' },
+  mission_archived: { fr: 'Mission archivée', ar: 'أرشفة المهمة' }
 };
 
 export default function MissionHistoryTimeline({ history }: Props) {
@@ -33,7 +41,7 @@ export default function MissionHistoryTimeline({ history }: Props) {
         <li key={`${item.status}-${item.at}-${index}`} className="mb-6">
           <span className="absolute -left-3 mt-1 h-3 w-3 rounded-full bg-sky-500" />
           <h4 className="font-semibold text-slate-800">
-            {STATUS_LABELS[item.status]?.[language] || item.status}
+            {ACTION_LABELS[item.action]?.[language] || STATUS_LABELS[item.status]?.[language] || item.status}
           </h4>
           <p className="text-sm text-slate-500">
             {new Date(item.at).toLocaleString()} — {item.user}

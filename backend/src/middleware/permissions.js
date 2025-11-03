@@ -39,7 +39,8 @@ function requireWorkflowPermission() {
     technical: 'mission_validate_technical',
     logistics: 'mission_assign_logistics',
     finance: 'mission_validate_finance',
-    dg: 'mission_validate_final'
+    dg: 'mission_validate_final',
+    closure: 'mission_close'
   };
   return async (req, res, next) => {
     const permissionCode = stepPermission[req.body?.step];

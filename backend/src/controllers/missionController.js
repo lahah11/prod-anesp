@@ -77,6 +77,15 @@ async function validateMission(req, res) {
           await workflowService.rejectMission(missionId, comment, req.user);
         }
         break;
+      case 'closure':
+        if (decision === 'approve') {
+          await workflowService.advanceToNext(missionId, 'archived', comment, req.user, {
+            historyAction: 'mission_archived'
+          });
+        } else {
+          await workflowService.returnToDocumentSubmission(missionId, comment, req.user);
+        }
+        break;
       default:
         return res.status(400).json({ message: 'Étape inconnue' });
     }
