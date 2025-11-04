@@ -2,6 +2,45 @@ const missionService = require('../services/missionService');
 const logisticsService = require('../services/logisticsService');
 const workflowService = require('../services/workflowService');
 
+const STEP_PERMISSIONS = {
+  technical: 'mission_validate_technical',
+  logistics: 'mission_assign_logistics',
+  finance: 'mission_validate_finance',
+  dg: 'mission_validate_final',
+  closure: 'mission_close'
+};
+
+const STATUS_TO_STEP = {
+  pending_technical_validation: 'technical',
+  pending_logistics: 'logistics',
+  pending_finance: 'finance',
+  pending_dg: 'dg',
+  pending_archive_validation: 'closure'
+};
+
+function userHasPermission(user, permissionCode) {
+  if (!permissionCode) {
+    return true;
+  }
+  if (!user) {
+    return false;
+  }
+  if (user.roleCode === 'super_admin') {
+    return true;
+  }
+  return Array.isArray(user.permissions) && user.permissions.includes(permissionCode);
+}
+
+function resolveWorkflowStep(explicitStep, mission) {
+  if (explicitStep) {
+    return explicitStep;
+  }
+  if (!mission) {
+    return null;
+  }
+  return STATUS_TO_STEP[mission.status] || null;
+}
+
 async function createMission(req, res) {
   try {
     const result = await missionService.createMission(req.body, req.user);
@@ -40,13 +79,37 @@ async function getMission(req, res) {
 
 async function validateMission(req, res) {
   const missionId = req.params.id;
-  const { step, decision, comment, logistics } = req.body || {};
-  if (!step || !decision) {
-    return res.status(400).json({ message: 'Étape et décision obligatoires' });
+  const { decision, comment, logistics } = req.body || {};
+  const explicitStep = req.body?.step;
+
+  if (!decision) {
+    return res.status(400).json({ message: 'La décision est obligatoire' });
   }
   if (decision === 'reject' && !comment) {
     return res.status(400).json({ message: 'Un motif est obligatoire en cas de rejet' });
   }
+
+  let mission;
+  try {
+    mission = await missionService.getMissionById(missionId);
+  } catch (error) {
+    console.error('validateMission load error', error);
+    return res.status(500).json({ message: 'Impossible de charger la mission' });
+  }
+
+  if (!mission) {
+    return res.status(404).json({ message: 'Mission introuvable' });
+  }
+
+  const step = resolveWorkflowStep(explicitStep, mission);
+  if (!step || !STEP_PERMISSIONS[step]) {
+    return res.status(400).json({ message: 'Étape inconnue' });
+  }
+
+  if (!userHasPermission(req.user, STEP_PERMISSIONS[step])) {
+    return res.status(403).json({ message: 'Permission insuffisante pour cette étape' });
+  }
+
   try {
     switch (step) {
       case 'technical':

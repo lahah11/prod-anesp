@@ -153,7 +153,7 @@ async function advanceToNext(missionId, nextStatus, comment, user, options = {})
       }
       const participants = await all(
         db,
-        'SELECT user_id FROM mission_participants WHERE mission_id = ? AND participant_type = "internal" AND user_id IS NOT NULL',
+        "SELECT user_id FROM mission_participants WHERE mission_id = ? AND participant_type = 'internal' AND user_id IS NOT NULL",
         [missionId]
       );
       for (const participant of participants) {
@@ -303,7 +303,7 @@ async function rejectMission(missionId, comment, user, options = {}) {
     });
     const participants = await all(
       db,
-      'SELECT user_id FROM mission_participants WHERE mission_id = ? AND participant_type = \"internal\"',
+      "SELECT user_id FROM mission_participants WHERE mission_id = ? AND participant_type = 'internal'",
       [missionId]
     );
     for (const participant of participants) {
