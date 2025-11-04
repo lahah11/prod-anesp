@@ -11,6 +11,8 @@ const FONT_AR = path.join(__dirname, '../assets/fonts/HYSMyeongJo-Medium.ttf');
 const LOGO_LEFT = path.join(__dirname, '../assets/images/ANESP.png');
 const LOGO_RIGHT = path.join(__dirname, '../assets/images/mauritania-coat-of-arms.png');
 const SLOGAN = path.join(__dirname, '../assets/images/slogan_rim.png');
+const LOGO_ANESP = path.join(__dirname, '../assets/images/ANESP.png');
+const STAMP_ANESP = path.join(__dirname, '../assets/images/an.png');
 const SIGNATURE_DG = path.join(__dirname, '../assets/images/signatures/signature.jpg');
 
 function getFont(doc, language) {
@@ -182,7 +184,8 @@ const DOCUMENT_DEFINITIONS = [
 async function loadMission(db, missionId) {
   const mission = await get(
     db,
-    `SELECT missions_unified.*, users.first_name || ' ' || users.last_name AS creator_name, users.email AS creator_email
+    `SELECT missions_unified.*, users.first_name || ' ' || users.last_name AS creator_name,
+            users.email AS creator_email, users.grade AS creator_grade, users.direction AS creator_direction
      FROM missions_unified
      JOIN users ON users.id = missions_unified.created_by
      WHERE missions_unified.id = ?`,
@@ -217,7 +220,107 @@ async function loadMission(db, missionId) {
   return mission;
 }
 
+function formatDate(date, locale = 'fr-FR') {
+  if (!date) return '';
+  try {
+    const value = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(value.getTime())) {
+      return String(date);
+    }
+    return value.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  } catch (error) {
+    return String(date);
+  }
+}
+
+function calculateDurationDays(mission) {
+  if (mission.duration_days && Number.isFinite(Number(mission.duration_days))) {
+    return Number(mission.duration_days);
+  }
+  if (!mission.start_date || !mission.end_date) {
+    return 0;
+  }
+  const start = new Date(mission.start_date);
+  const end = new Date(mission.end_date);
+  const diff = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return diff >= 0 ? diff + 1 : 0;
+}
+
+function createOrderMissionDocumentAr(mission) {
+  const doc = new PDFDocument({ margin: 50 });
+  getFont(doc, 'ar');
+  doc.direction = 'rtl';
+
+  if (fs.existsSync(LOGO_ANESP)) {
+    const logoWidth = 90;
+    const centerX = doc.page.width / 2 - logoWidth / 2;
+    doc.image(LOGO_ANESP, centerX, doc.y, { width: logoWidth });
+    doc.moveDown(1.2);
+  }
+
+  doc.fontSize(12);
+  doc.text('الوكالة الوطنية للتنفيذ ومتابعة المشاريع', { align: 'center' });
+  doc.text("AGENCE NATIONALE D’EXÉCUTION ET DE SUIVI DES PROJETS", { align: 'center' });
+  doc.moveDown(1.2);
+
+  doc.fontSize(16).text('أمر بمهمة', {
+    align: 'center',
+    continued: false
+  });
+  doc.moveDown(1.2);
+
+  const duration = calculateDurationDays(mission);
+  const destinations = mission.destinations && mission.destinations.length
+    ? mission.destinations.map((item) => item.city).join('، ')
+    : '';
+
+  const rows = [
+    ['الإسم :', mission.creator_name || '—'],
+    ['الوظيفة :', mission.creator_grade || '—'],
+    ['الرقم :', mission.reference || '—'],
+    ['الجهة :', mission.creator_direction || '—'],
+    ['الغرض من المهمة :', mission.objective || mission.title || '—'],
+    ['الوجهة :', destinations || mission.departure_city || '—'],
+    ['مدة المهمة :', duration ? `${duration} أيام` : '—'],
+    ['تاريخ الذهاب :', formatDate(mission.start_date, 'ar-MA') || '—'],
+    ['تاريخ العودة :', formatDate(mission.end_date, 'ar-MA') || '—'],
+    ['وسيلة النقل :', (mission.logistics && mission.logistics.vehicle_label) || mission.transport_mode || '—']
+  ];
+
+  doc.fontSize(13);
+  rows.forEach(([label, value]) => {
+    const text = `${label} ${value || '—'}`;
+    doc.text(text, { align: 'right' });
+    doc.moveDown(0.2);
+  });
+
+  doc.moveDown(2);
+  const today = formatDate(new Date(), 'fr-FR');
+  doc.fontSize(12);
+  doc.text(`Nouakchott, le ${today}`, { align: 'left' });
+  doc.moveDown();
+  doc.text('La Directrice Générale', { align: 'left' });
+
+  const signatureWidth = 120;
+  const stampWidth = 130;
+  const footerY = doc.y + 10;
+
+  if (fs.existsSync(SIGNATURE_DG)) {
+    doc.image(SIGNATURE_DG, doc.page.margins.left, footerY, { width: signatureWidth });
+  }
+
+  if (fs.existsSync(STAMP_ANESP)) {
+    const stampX = doc.page.margins.left + signatureWidth + 40;
+    doc.image(STAMP_ANESP, stampX, footerY - 40, { width: stampWidth });
+  }
+
+  return doc;
+}
+
 function createDocument(mission, definition, language) {
+  if (definition.type === 'ordre_mission' && language === 'ar') {
+    return createOrderMissionDocumentAr(mission);
+  }
   const doc = new PDFDocument({ margin: 40 });
   getFont(doc, language);
   if (language === 'ar') {
