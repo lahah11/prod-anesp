@@ -218,7 +218,16 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
       }
     } catch (error: any) {
       console.error('Workflow error', error);
-      const message = error?.response?.data?.message || 'Erreur lors de la validation';
+      let message = error?.response?.data?.message || 'Erreur lors de la validation';
+      const isNetworkError =
+        error?.code === 'ERR_NETWORK' ||
+        error?.message === 'Network Error' ||
+        (!!error?.request && !error?.response);
+
+      if (isNetworkError) {
+        message = 'Connexion au serveur impossible. Vérifiez que le backend est démarré.';
+      }
+
       setActionError(message);
       toast.error(message);
       const failedMission = error?.response?.data?.mission;
@@ -265,9 +274,17 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success('Document téléchargé');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error', error);
-      toast.error('Impossible de télécharger le document');
+      const isNetworkError =
+        error?.code === 'ERR_NETWORK' ||
+        error?.message === 'Network Error' ||
+        (!!error?.request && !error?.response);
+      if (isNetworkError) {
+        toast.error('Connexion au serveur impossible. Vérifiez que le backend est démarré.');
+      } else {
+        toast.error('Impossible de télécharger le document');
+      }
     } finally {
       setDownloadingId(null);
     }
