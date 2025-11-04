@@ -1,6 +1,6 @@
 const express = require('express');
 const missionController = require('../controllers/missionController');
-const { requirePermission, requireWorkflowPermission } = require('../middleware/permissions');
+const { requirePermission } = require('../middleware/permissions');
 
 const router = express.Router();
 
@@ -11,6 +11,6 @@ router.get('/', missionController.listMissions);
 router.get('/available/internal-agents', requirePermission('mission_create'), missionController.availableAgents);
 // Allow any authenticated user to view a specific mission
 router.get('/:id', missionController.getMission);
-router.post('/:id/validate', requireWorkflowPermission(), missionController.validateMission);
+router.post('/:id/validate', missionController.validateMission);
 
 module.exports = router;

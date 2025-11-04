@@ -10,7 +10,10 @@ import {
   TruckIcon,
   CurrencyDollarIcon,
   ShieldCheckIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  ClipboardDocumentCheckIcon,
+  DocumentArrowUpIcon,
+  ArrowDownTrayIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -21,6 +24,7 @@ import MissionHistoryTimeline from '@/components/MissionHistoryTimeline';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/app/providers';
 import { missionService, WorkflowResponse } from '@/services/missionService';
+import { documentService } from '@/services/documentService';
 
 interface MissionParticipant {
   id: number;
@@ -41,6 +45,7 @@ interface MissionDetails {
   reference: string;
   title: string;
   objective: string;
+  created_by: number;
   mission_type: 'terrestre' | 'aerienne';
   start_date: string;
   end_date: string;
@@ -52,7 +57,17 @@ interface MissionDetails {
   per_diem_total: number;
   destinations: { city: string; distance_km: number }[];
   participants: MissionParticipant[];
-  documents: any[];
+  documents: {
+    id: number;
+    document_type: string;
+    title: string;
+    language: string;
+    file_path: string;
+    mime_type: string;
+    file_size: number;
+    checksum: string;
+    created_at: string;
+  }[];
   validation_history: any[];
   logistics?: {
     vehicle_id?: number;
@@ -75,16 +90,20 @@ type MissionStatus =
   | 'pending_finance'
   | 'pending_dg'
   | 'approved'
+  | 'pending_archive_validation'
+  | 'archived'
   | 'rejected';
 
-type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg';
+type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg' | 'closure';
 
 const STATUS_ORDER: MissionStatus[] = [
   'pending_technical_validation',
   'pending_logistics',
   'pending_finance',
   'pending_dg',
-  'approved'
+  'approved',
+  'pending_archive_validation',
+  'archived'
 ];
 
 const PERMISSION_BY_STATUS: Record<MissionStatus, string | null> = {
@@ -93,19 +112,24 @@ const PERMISSION_BY_STATUS: Record<MissionStatus, string | null> = {
   pending_finance: 'mission_validate_finance',
   pending_dg: 'mission_validate_final',
   approved: null,
+  pending_archive_validation: 'mission_close',
+  archived: null,
   rejected: null
 };
 
 function getCurrentStep(status: MissionStatus): number {
   const index = STATUS_ORDER.indexOf(status);
-  return index === -1 ? 0 : index + 1;
+  if (index === -1) return 0;
+  return Math.min(index + 1, STEP_DEFINITIONS.length);
 }
 
 const STEP_DEFINITIONS = [
   { id: 1, name: 'Validation technique', role: 'technique', icon: ShieldCheckIcon },
   { id: 2, name: 'Attribution moyens', role: 'moyens_generaux', icon: TruckIcon },
   { id: 3, name: 'Validation financière', role: 'daf', icon: CurrencyDollarIcon },
-  { id: 4, name: 'Validation finale DG', role: 'dg', icon: CheckCircleIcon }
+  { id: 4, name: 'Validation finale DG', role: 'dg', icon: CheckCircleIcon },
+  { id: 5, name: 'Soumission documents (initiateur)', role: 'ingenieur', icon: DocumentArrowUpIcon },
+  { id: 6, name: 'Vérification documents (MG)', role: 'moyens_generaux', icon: ClipboardDocumentCheckIcon }
 ];
 
 function MissionDetailContent({ params }: { params: { id: string } }) {
@@ -115,6 +139,7 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
   const [submitting, setSubmitting] = useState(false);
   const [comment, setComment] = useState('');
   const [actionError, setActionError] = useState('');
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   useEffect(() => {
     const loadMission = async () => {
@@ -139,9 +164,25 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
 
   const currentStep = mission ? getCurrentStep(mission.status) : 0;
 
+  const missionOrderDocs = useMemo(() => {
+    if (!mission) return [];
+    return mission.documents.filter((doc) => doc.document_type === 'ordre_mission');
+  }, [mission]);
+
+  const statusAllowsMissionOrderDownload =
+    mission ? ['approved', 'pending_archive_validation', 'archived'].includes(mission.status) : false;
+
+  const isInitiator = mission && user ? user.id === mission.created_by : false;
+
+  const canDownloadMissionOrder =
+    !!mission &&
+    statusAllowsMissionOrderDownload &&
+    missionOrderDocs.length > 0 &&
+    (isInitiator || user?.role === 'super_admin');
+
   const canAct = useMemo(() => {
     if (!user || !mission) return false;
-    if (mission.status === 'approved' || mission.status === 'rejected') return false;
+    if (mission.status === 'approved' || mission.status === 'rejected' || mission.status === 'archived') return false;
     if (user.role === 'super_admin') return true;
     const requiredPermission = PERMISSION_BY_STATUS[mission.status];
     if (!requiredPermission) return false;
@@ -159,6 +200,7 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
     if (status === 'pending_technical_validation') step = 'technical';
     else if (status === 'pending_logistics') step = 'logistics';
     else if (status === 'pending_finance') step = 'finance';
+    else if (status === 'pending_archive_validation') step = 'closure';
     else step = 'dg';
 
     setSubmitting(true);
@@ -176,7 +218,16 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
       }
     } catch (error: any) {
       console.error('Workflow error', error);
-      const message = error?.response?.data?.message || 'Erreur lors de la validation';
+      let message = error?.response?.data?.message || 'Erreur lors de la validation';
+      const isNetworkError =
+        error?.code === 'ERR_NETWORK' ||
+        error?.message === 'Network Error' ||
+        (!!error?.request && !error?.response);
+
+      if (isNetworkError) {
+        message = 'Connexion au serveur impossible. Vérifiez que le backend est démarré.';
+      }
+
       setActionError(message);
       toast.error(message);
       const failedMission = error?.response?.data?.mission;
@@ -185,6 +236,57 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const extractFilename = (disposition?: string | null) => {
+    if (!disposition) return null;
+    const filenameStarMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (filenameStarMatch?.[1]) {
+      try {
+        return decodeURIComponent(filenameStarMatch[1]);
+      } catch (error) {
+        console.warn('Unable to decode filename', error);
+      }
+    }
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    if (filenameMatch?.[1]) {
+      return filenameMatch[1];
+    }
+    return null;
+  };
+
+  const handleDownload = async (documentId: number, fallbackName: string) => {
+    setDownloadingId(documentId);
+    try {
+      const response = await documentService.download(documentId);
+      const blob = new Blob([response.data], {
+        type: response.headers['content-type'] || 'application/pdf'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const filename =
+        extractFilename(response.headers['content-disposition']) || `${fallbackName}.pdf`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Document téléchargé');
+    } catch (error: any) {
+      console.error('Download error', error);
+      const isNetworkError =
+        error?.code === 'ERR_NETWORK' ||
+        error?.message === 'Network Error' ||
+        (!!error?.request && !error?.response);
+      if (isNetworkError) {
+        toast.error('Connexion au serveur impossible. Vérifiez que le backend est démarré.');
+      } else {
+        toast.error('Impossible de télécharger le document');
+      }
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -212,11 +314,12 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
     );
   }
 
+  const allStepsCompleted = mission?.status === 'archived';
   const stepCards = STEP_DEFINITIONS.map((step, index) => ({
     ...step,
-    completed: currentStep > index + 1,
-    current: currentStep === index + 1,
-    statusReached: currentStep >= index + 1
+    completed: allStepsCompleted || currentStep > index + 1,
+    current: allStepsCompleted ? false : currentStep === index + 1,
+    statusReached: allStepsCompleted || currentStep >= index + 1
   }));
 
   const hasLogisticsPermission = user?.role === 'super_admin' || user?.permissions?.includes('mission_assign_logistics');
@@ -371,6 +474,37 @@ function MissionDetailContent({ params }: { params: { id: string } }) {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Historique</h2>
           <MissionHistoryTimeline history={mission.validation_history || []} />
         </div>
+
+        {canDownloadMissionOrder && mission && (
+          <div className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+              <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Ordre de mission généré
+            </h2>
+            <p className="text-sm text-gray-600">
+              Téléchargez l'ordre de mission validé par la direction générale. Les documents sont disponibles dans les deux
+              langues.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {missionOrderDocs.map((doc) => {
+                const fallbackName = `${mission.reference}_${doc.language}_${doc.document_type}`.replace(/\s+/g, '_');
+                const languageLabel = doc.language === 'ar' ? 'Version arabe' : 'Version française';
+                const isDownloading = downloadingId === doc.id;
+                return (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => handleDownload(doc.id, fallbackName)}
+                    disabled={isDownloading}
+                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60"
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                    {isDownloading ? 'Téléchargement…' : languageLabel}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {showDocumentUpload && (
           <DocumentUpload missionId={params.id} onUploadComplete={refresh} />

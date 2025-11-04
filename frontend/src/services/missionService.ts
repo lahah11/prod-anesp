@@ -6,7 +6,7 @@ export type MissionFilters = {
 };
 
 export type WorkflowDecision = 'approve' | 'reject';
-export type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg';
+export type WorkflowStep = 'technical' | 'logistics' | 'finance' | 'dg' | 'closure';
 
 export interface WorkflowResponse {
   message: string;

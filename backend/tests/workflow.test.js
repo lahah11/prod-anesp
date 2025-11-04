@@ -32,6 +32,7 @@ const { connect, get, all, closePool } = require('../src/config/database');
 const missionService = require('../src/services/missionService');
 const workflowService = require('../src/services/workflowService');
 const logisticsService = require('../src/services/logisticsService');
+const missionController = require('../src/controllers/missionController');
 
 async function resetDatabase() {
   if (fs.existsSync(process.env.STORAGE_ROOT)) {
@@ -55,16 +56,42 @@ async function fetchUser(email) {
     if (!row) {
       throw new Error(`User ${email} not found`);
     }
+    const permissionRows = await all(
+      db,
+      `SELECT permissions.code
+       FROM permissions
+       JOIN role_permissions ON role_permissions.permission_id = permissions.id
+       WHERE role_permissions.role_id = ?
+       ORDER BY permissions.code ASC`,
+      [row.role_id]
+    );
     return {
       id: row.id,
       firstName: row.first_name,
       lastName: row.last_name,
       roleId: row.role_id,
-      roleCode: row.role_code
+      roleCode: row.role_code,
+      permissions: permissionRows.map((permission) => permission.code)
     };
   } finally {
     db.release();
   }
+}
+
+function createMockResponse() {
+  const response = {
+    statusCode: 200,
+    payload: null
+  };
+  response.status = (code) => {
+    response.statusCode = code;
+    return response;
+  };
+  response.json = (payload) => {
+    response.payload = payload;
+    return response;
+  };
+  return response;
 }
 
 async function fetchFirst(table) {
@@ -202,6 +229,51 @@ test('rejection frees resources and resets participants', async () => {
   } finally {
     db.release();
   }
+});
+
+test('validateMission infers step when omitted and enforces permissions', async () => {
+  const engineer = await fetchUser('engineer@anesp.gov');
+  const technique = await fetchUser('tech@anesp.gov');
+  const moyensGeneraux = await fetchUser('mg@anesp.gov');
+  const daf = await fetchUser('daf@anesp.gov');
+  const dg = await fetchUser('dg@anesp.gov');
+
+  const mission = await missionService.createMission(missionPayload(technique.id), engineer);
+  await workflowService.advanceToNext(mission.id, 'pending_logistics', 'Conforme', technique);
+
+  const vehicle = await fetchFirst('vehicles');
+  const driver = await fetchFirst('drivers');
+  await logisticsService.assignLogistics(
+    mission.id,
+    {
+      vehicle_id: vehicle.id,
+      driver_id: driver.id,
+      notes: 'Affectation validée'
+    },
+    moyensGeneraux
+  );
+
+  await workflowService.advanceToNext(mission.id, 'pending_dg', 'Budget validé', daf);
+
+  const forbiddenReq = {
+    params: { id: String(mission.id) },
+    body: { decision: 'approve' },
+    user: engineer
+  };
+  const forbiddenRes = createMockResponse();
+  await missionController.validateMission(forbiddenReq, forbiddenRes);
+  assert.equal(forbiddenRes.statusCode, 403);
+  assert.deepEqual(forbiddenRes.payload, { message: 'Permission insuffisante pour cette étape' });
+
+  const approveReq = {
+    params: { id: String(mission.id) },
+    body: { decision: 'approve' },
+    user: dg
+  };
+  const approveRes = createMockResponse();
+  await missionController.validateMission(approveReq, approveRes);
+  assert.equal(approveRes.statusCode, 200);
+  assert.equal(approveRes.payload?.mission?.status, 'approved');
 });
 
 test('logistics assignment enforces mandatory vehicle and driver for terrestrial missions', async () => {

@@ -3,7 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { PlusIcon, EyeIcon, CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline';
+import {
+  PlusIcon,
+  EyeIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ClockIcon,
+  ClipboardDocumentCheckIcon,
+  ArchiveBoxIcon
+} from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -24,6 +32,8 @@ type MissionStatus =
   | 'pending_finance'
   | 'pending_dg'
   | 'approved'
+  | 'pending_archive_validation'
+  | 'archived'
   | 'rejected';
 
 interface Mission {
@@ -41,7 +51,7 @@ interface Mission {
 function MissionsPageContent() {
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'rejected'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'archived' | 'rejected'>('all');
   const router = useRouter();
 
   useEffect(() => {
@@ -69,7 +79,9 @@ function MissionsPageContent() {
       pending_logistics: { label: 'En attente attribution moyens', color: 'blue', icon: ClockIcon },
       pending_finance: { label: 'En attente validation financière', color: 'purple', icon: ClockIcon },
       pending_dg: { label: 'En attente validation DG', color: 'orange', icon: ClockIcon },
-      approved: { label: 'Approuvée', color: 'green', icon: CheckCircleIcon },
+      approved: { label: 'Validée par la DG', color: 'green', icon: CheckCircleIcon },
+      pending_archive_validation: { label: 'En attente vérification MG', color: 'sky', icon: ClipboardDocumentCheckIcon },
+      archived: { label: 'Archivée', color: 'gray', icon: ArchiveBoxIcon },
       rejected: { label: 'Rejetée', color: 'red', icon: XCircleIcon }
     };
     return map[status];
@@ -77,7 +89,8 @@ function MissionsPageContent() {
 
   const filteredMissions = missions.filter((mission) => {
     if (filter === 'pending') return mission.status.startsWith('pending');
-    if (filter === 'validated') return mission.status === 'approved';
+    if (filter === 'validated') return mission.status === 'approved' || mission.status === 'pending_archive_validation';
+    if (filter === 'archived') return mission.status === 'archived';
     if (filter === 'rejected') return mission.status === 'rejected';
     return true;
   });
@@ -135,7 +148,17 @@ function MissionsPageContent() {
                 filter === 'validated' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Approuvées ({missions.filter((m) => m.status === 'approved').length})
+              Validées ({
+                missions.filter((m) => m.status === 'approved' || m.status === 'pending_archive_validation').length
+              })
+            </button>
+            <button
+              onClick={() => setFilter('archived')}
+              className={`px-4 py-2 rounded-md text-sm font-medium ${
+                filter === 'archived' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Archivées ({missions.filter((m) => m.status === 'archived').length})
             </button>
             <button
               onClick={() => setFilter('rejected')}

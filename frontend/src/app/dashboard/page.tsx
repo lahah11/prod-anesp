@@ -7,7 +7,9 @@ import {
   ClockIcon,
   CheckCircleIcon,
   XCircleIcon,
-  UsersIcon
+  UsersIcon,
+  ClipboardDocumentCheckIcon,
+  ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -22,6 +24,8 @@ type MissionStatus =
   | 'pending_finance'
   | 'pending_dg'
   | 'approved'
+  | 'pending_archive_validation'
+  | 'archived'
   | 'rejected';
 
 interface MissionRow {
@@ -88,8 +92,22 @@ export default function DashboardPage() {
   }
 
   const pendingCount = missions.filter((mission) => mission.status.startsWith('pending')).length;
-  const approvedCount = missions.filter((mission) => mission.status === 'approved').length;
+  const validatedCount = missions.filter(
+    (mission) => mission.status === 'approved' || mission.status === 'pending_archive_validation'
+  ).length;
+  const archivedCount = missions.filter((mission) => mission.status === 'archived').length;
   const rejectedCount = missions.filter((mission) => mission.status === 'rejected').length;
+
+  const statusBadges: Record<MissionStatus, { label: string; className: string }> = {
+    pending_technical_validation: { label: 'En attente validation technique', className: 'bg-yellow-100 text-yellow-800' },
+    pending_logistics: { label: 'En attente attribution moyens', className: 'bg-blue-100 text-blue-800' },
+    pending_finance: { label: 'En attente validation financière', className: 'bg-purple-100 text-purple-800' },
+    pending_dg: { label: 'En attente validation DG', className: 'bg-orange-100 text-orange-800' },
+    approved: { label: 'Validée par la DG', className: 'bg-green-100 text-green-800' },
+    pending_archive_validation: { label: 'En attente vérification MG', className: 'bg-sky-100 text-sky-800' },
+    archived: { label: 'Archivée', className: 'bg-gray-100 text-gray-800' },
+    rejected: { label: 'Rejetée', className: 'bg-red-100 text-red-800' }
+  };
 
   const recentMissions = missions.slice(0, 5);
 
@@ -107,7 +125,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-white shadow rounded-lg p-4 flex items-center space-x-4">
             <ClockIcon className="h-10 w-10 text-yellow-500" />
             <div>
@@ -118,8 +136,24 @@ export default function DashboardPage() {
           <div className="bg-white shadow rounded-lg p-4 flex items-center space-x-4">
             <CheckCircleIcon className="h-10 w-10 text-green-500" />
             <div>
-              <p className="text-sm text-gray-500">Missions approuvées</p>
-              <p className="text-2xl font-semibold text-gray-900">{approvedCount}</p>
+              <p className="text-sm text-gray-500">Missions validées</p>
+              <p className="text-2xl font-semibold text-gray-900">{validatedCount}</p>
+            </div>
+          </div>
+          <div className="bg-white shadow rounded-lg p-4 flex items-center space-x-4">
+            <ClipboardDocumentCheckIcon className="h-10 w-10 text-sky-500" />
+            <div>
+              <p className="text-sm text-gray-500">En vérification MG</p>
+              <p className="text-2xl font-semibold text-gray-900">
+                {missions.filter((mission) => mission.status === 'pending_archive_validation').length}
+              </p>
+            </div>
+          </div>
+          <div className="bg-white shadow rounded-lg p-4 flex items-center space-x-4">
+            <ArchiveBoxIcon className="h-10 w-10 text-gray-500" />
+            <div>
+              <p className="text-sm text-gray-500">Missions archivées</p>
+              <p className="text-2xl font-semibold text-gray-900">{archivedCount}</p>
             </div>
           </div>
           <div className="bg-white shadow rounded-lg p-4 flex items-center space-x-4">
@@ -149,16 +183,8 @@ export default function DashboardPage() {
                       <p className="text-sm font-semibold text-gray-900">{mission.title || mission.reference}</p>
                       <p className="text-xs text-gray-500">{mission.reference}</p>
                     </div>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        mission.status === 'approved'
-                          ? 'bg-green-100 text-green-800'
-                          : mission.status === 'rejected'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {mission.status.replace('pending_', 'en attente ')}
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadges[mission.status].className}`}>
+                      {statusBadges[mission.status].label}
                     </span>
                   </div>
                 </li>
